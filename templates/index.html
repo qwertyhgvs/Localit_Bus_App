@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ route_name }} — 시간표</title>
+
+  <!-- Leaflet CDN (지도용) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; padding: 16px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    table { border-collapse: collapse; width: 100%; max-width:640px; margin-bottom:12px; }
+    td, th { border: 1px solid #ddd; padding: 8px; text-align:center; }
+    #map { height: 360px; max-width:900px; margin-top:12px; }
+    .meta { color: #555; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h2>{{ route_name }}</h2>
+      <div class="meta">출발역: {{ departure_station }} · 정류장 수: {{ gps_info|length }}</div>
+    </div>
+    <div>
+      <a href="/api/timetable" target="_blank">JSON 보기 (API)</a>
+    </div>
+  </header>
+
+  <section>
+    <h3>시간표</h3>
+    {% if timetable %}
+      <table>
+        <thead><tr><th>#</th><th>출발 시간</th></tr></thead>
+        <tbody>
+          {% for t in timetable %}
+            <tr><td>{{ loop.index }}</td><td>{{ t }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>시간표 데이터가 없습니다.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h3>정류장 위치</h3>
+    <div id="map"></div>
+    <script>
+      // 초기 위치: 한국 중앙(대충) — gps_info 없으면 대비
+      var initialLat = 36.07;
+      var initialLng = 126.72;
+      var map = L.map('map').setView([initialLat, initialLng], 12);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      var gpsData = {{ gps_info | tojson }};
+      var keys = Object.keys(gpsData);
+      if (keys.length === 0) {
+        // 비어있으면 기본 마커
+        L.marker([initialLat, initialLng]).addTo(map).bindPopup("위치 정보 없음").openPopup();
+      } else {
+        for (var i = 0; i < keys.length; i++) {
+          var name = keys[i];
+          var coords = gpsData[name];
+          if (!coords || coords.length < 2) continue;
+          L.marker([coords[0], coords[1]]).addTo(map).bindPopup(name);
+        }
+        // 지도를 모든 마커에 맞게 줌/패닝
+        var group = new L.featureGroup(keys.map(k => L.marker(gpsData[k])));
+        map.fitBounds(group.getBounds().pad(0.3));
+      }
+    </script>
+  </section>
+</body>
+</html>
