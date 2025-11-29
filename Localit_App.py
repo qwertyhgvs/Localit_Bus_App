@@ -1,17 +1,16 @@
 from pathlib import Path
 import json
-import sys
-import traceback
+import datetime # 시간 계산을 위해 datetime 모듈 추가
 from flask import Flask, render_template, jsonify
-import webbrowser
-import threading
-from pyngrok import ngrok # ngrok 라이브러리 추가
+# import sys, traceback (불필요한 모듈 제거)
+# import webbrowser, threading, ngrok (ngrok 및 자동 브라우저 모듈은 Render에서 불필요)
 
 APP_PORT = 5000
 JSON_FILENAME = "timetable.json"
 
 app = Flask(__name__, template_folder="templates")
 
+# --- 1. JSON 파일 로드 함수 (유지) ---
 def load_json(filename: str):
     try:
         script_folder = Path(__file__).resolve().parent
@@ -20,6 +19,7 @@ def load_json(filename: str):
     file_path = script_folder / filename
 
     if not file_path.exists():
+        # Render 환경에서는 이 경로를 통해 파일을 찾습니다.
         raise FileNotFoundError(f"파일을 찾을 수 없습니다: {file_path}")
 
     with open(file_path, "r", encoding="utf-8") as f:
@@ -29,57 +29,60 @@ def load_json(filename: str):
 try:
     DATA = load_json(JSON_FILENAME)
 except Exception as e:
-    print("JSON 로드 실패:", e)
+    # Render 로그에 오류를 명확히 남깁니다.
+    print(f"❌ CRITICAL ERROR: JSON 로드 실패: {e}")
     DATA = {
-        "route_name": "알 수 없음",
-        "departure_station": "알 수 없음",
+        "route_name": "데이터 로드 오류",
+        "departure_station": "데이터 로드 오류",
         "timetable": [],
         "gps_info": {}
     }
 
+# --- 2. 메인 페이지 라우트 (시간 계산 로직 복원) ---
 @app.route("/")
 def index():
-    # templates/index.html로 렌더링하면서 데이터 전달
+    
+    # 2-1. 현재 시간 계산
+    now = datetime.datetime.now()
+    current_time_str = now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
+
+    # 2-2. 다음 버스 시간 계산 로직 복원
+    timetable_list = DATA.get("timetable", [])
+    time_remaining_str = "오늘 운행 종료"
+    
+    for time_str in timetable_list:
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            # 현재 날짜를 기준으로 시간표의 시간/분으로 대체
+            bus_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            if bus_time > now:
+                time_difference = bus_time - now
+                minutes_remaining = int(time_difference.total_seconds() / 60)
+                
+                time_remaining_str = f"다음 버스까지 약 {minutes_remaining}분 남음 ({time_str} 출발)"
+                break
+        except ValueError:
+            continue
+            
+    # 2-3. templates/index.html로 렌더링하면서 데이터 전달
     return render_template("index.html",
+                           current_time=current_time_str, # 계산된 현재 시간 추가
+                           time_remaining=time_remaining_str, # 계산된 남은 시간 추가
                            route_name=DATA.get("route_name"),
                            departure_station=DATA.get("departure_station"),
-                           timetable=DATA.get("timetable", []),
+                           timetable=timetable_list,
                            gps_info=DATA.get("gps_info", {}))
 
+# --- 3. API 엔드포인트 (유지) ---
 @app.route("/api/timetable")
 def api_timetable():
     return jsonify(DATA)
 
-def open_browser_later(url):
-    # 서버가 뜰 때 브라우저 자동 오픈 (백그라운드 쓰레드)
-    webbrowser.open(url)
-
+# --- 4. 앱 실행 (로컬 환경에서만 작동하도록 정리) ---
 if __name__ == "__main__":
-    
-    # ngrok 통합 블록
-    try:
-        # 기존 ngrok 터널이 있다면 종료
-        ngrok.kill()
-        
-        # ngrok 터널 열기 (HTTP) 및 Public URL 확보
-        public_url = ngrok.connect(APP_PORT).public_url
-        print("▶ ngrok 터널 시작: Public URL =", public_url)
-        
-        # 브라우저 오픈 및 Flask 서버 실행 호스트 설정
-        open_url = public_url
-        run_host = "0.0.0.0" # ngrok을 사용하려면 모든 인터페이스에서 수신해야 함
-    
-    except Exception as e:
-        # ngrok 연결 실패 시 로컬 호스트로 폴백
-        print(f"ngrok 연결 실패. 로컬 호스트로 실행합니다: {e}")
-        open_url = f"http://127.0.0.1:{APP_PORT}/"
-        run_host = "127.0.0.1"
-
-    print("▶ 웹앱 시작: 접속 URL =", open_url)
-    
-    # 자동으로 브라우저를 여는 쓰레드
-    threading.Timer(1.0, open_browser_later, args=(open_url,)).start()
-    
-    # 디버그 모드 끄려면 debug=False
-    # ngrok 사용 시 use_reloader=False를 설정하여 터널이 중복 생성되는 것을 방지합니다.
-    app.run(host=run_host, port=APP_PORT, debug=True, use_reloader=False)
+    # 이 블록은 gunicorn이 아닌, 로컬에서 직접 python Localit_App.py를 실행할 때만 작동합니다.
+    # ngrok 코드는 제거하고 로컬 실행만 남겨둡니다.
+    print("▶ 로컬 웹앱 시작: http://127.0.0.1:5000/")
+    # 로컬 테스트를 위해 debug=True로 설정합니다.
+    app.run(host="127.0.0.1", port=APP_PORT, debug=True)
