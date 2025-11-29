@@ -3,7 +3,7 @@ import json
 import datetime # 시간 계산을 위해 datetime 모듈 추가
 from flask import Flask, render_template, jsonify
 # import sys, traceback (불필요한 모듈 제거)
-# import webbrowser, threading, ngrok (ngrok 및 자동 브라우저 모듈은 Render에서 불필요)
+# import webbrowser
 
 APP_PORT = 5000
 JSON_FILENAME = "timetable.json"
