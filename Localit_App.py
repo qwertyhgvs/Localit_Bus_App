@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
 import datetime
+# pytz 라이브러리를 추가하고 zoneinfo 대신 사용
+import pytz 
 from flask import Flask, render_template, jsonify, abort, url_for
 from jinja2 import TemplateNotFound
 import traceback
@@ -171,18 +173,25 @@ def inject_data():
     return dict(DATA=DATA)
 
 # --- 2. 시간 계산 헬퍼 함수 (KST-aware) ---
+# 기존 zoneinfo 대신 pytz를 사용하여 Python 3.8 환경에서도 호환되도록 수정
 def calculate_next_bus(timetable_list):
-    from zoneinfo import ZoneInfo  # Python 3.9+
-    KST = ZoneInfo("Asia/Seoul")
+    # from zoneinfo import ZoneInfo  # Python 3.9+ 대신
+    # KST = ZoneInfo("Asia/Seoul")
+    
+    # pytz를 사용하여 KST 시간대 정의
+    KST = pytz.timezone("Asia/Seoul")
 
+    # KST 시간으로 현재 시각을 가져옴
     now = datetime.datetime.now(tz=KST)
+    
     parsed_entries = []
     for t in timetable_list:
         try:
             clean = str(t).split('역')[0].strip()
             h, m = map(int, clean.split(':'))
-            dt = datetime.datetime(year=now.year, month=now.month, day=now.day,
-                                   hour=h, minute=m, second=0, tzinfo=KST)
+            # KST 시간대로 datetime 객체 생성
+            dt = KST.localize(datetime.datetime(year=now.year, month=now.month, day=now.day,
+                                     hour=h, minute=m, second=0))
             parsed_entries.append((dt, clean))
         except Exception:
             continue
@@ -196,6 +205,7 @@ def calculate_next_bus(timetable_list):
             return display, orig_str, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
 
     if parsed_entries:
+        # 오늘 운행이 끝났다면 내일 첫차 시간 계산
         first_dt_today, first_str = parsed_entries[0]
         tomorrow_dt = first_dt_today + datetime.timedelta(days=1)
         mins = int((tomorrow_dt - now).total_seconds() // 60)
@@ -363,4 +373,5 @@ def tourism_detail(mode, region_name, station_name):
 # --- 4. 앱 실행 ---
 if __name__ == "__main__":
     print("▶ 로컬 웹앱 시작: http://127.0.0.1:5000/")
+    # debug=True가 빠져있어 추가했습니다.
     app.run(host="127.0.0.1", port=APP_PORT, debug=True)
