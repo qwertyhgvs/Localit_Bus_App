@@ -38,7 +38,7 @@
     <div class="card">
       <div class="controls">
         <input id="q" type="search" placeholder="검색 (정확한 이름 일부만 입력해도 됩니다)" />
-        <a id="home" class="back" href="{{ url_for('select_region') }}">처음으로</a>
+        <a id="home" class="back" href="{{ url_for('index_choice') }}">처음으로</a>
       </div>
 
       <div class="breadcrumb">
@@ -52,17 +52,16 @@
 
       {% if items %}
         <div id="list" class="list">
-          {# items는 문자열 목록 (정렬은 백엔드에서 처리했으니 여기서는 그대로 반복) #}
           {% for item in items %}
             {% if parent_region is defined and parent_station is defined %}
-              {# 현재 페이지: 노선 선택 -> 다음은 show_timetable (need route_name) #}
-              <a class="item" href="{{ url_for(next_route, region_name=parent_region, station_name=parent_station, route_name=item) }}">{{ item }}</a>
+              {# 노선 선택 -> 다음은 시간표 (transport only) #}
+              <a class="item" href="{{ url_for(next_route, mode=mode, region_name=parent_region, station_name=parent_station, route_name=item) }}">{{ item }}</a>
             {% elif parent_region is defined %}
-              {# 현재 페이지: 정류장 선택 -> 다음은 select_route (need station_name) #}
-              <a class="item" href="{{ url_for(next_route, region_name=parent_region, station_name=item) }}">{{ item }}</a>
+              {# 정류장 선택 -> 다음은 노선 선택 or 관광 상세 #}
+              <a class="item" href="{{ url_for(next_route, mode=mode, region_name=parent_region, station_name=item) }}">{{ item }}</a>
             {% else %}
-              {# 현재 페이지: 읍/면 선택 -> 다음은 select_station (need region_name) #}
-              <a class="item" href="{{ url_for(next_route, region_name=item) }}">{{ item }}</a>
+              {# 읍/면 선택 -> 다음은 정류장 선택 or 관광 카테고리 #}
+              <a class="item" href="{{ url_for(next_route, mode=mode, region_name=item) }}">{{ item }}</a>
             {% endif %}
           {% endfor %}
         </div>
@@ -94,8 +93,7 @@
         });
       });
     }
-
-    // 모바일에서 '처음으로' 링크 대신 현재 위치로 돌아가게 할 수도 있음(선택).
   </script>
 </body>
 </html>
+
