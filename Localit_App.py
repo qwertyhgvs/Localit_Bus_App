@@ -84,24 +84,52 @@ def inject_data():
     return dict(DATA=DATA)
 
 # --- 2. 시간 계산 헬퍼 함수 ---
+# replace your existing calculate_next_bus(...) with this improved version
 def calculate_next_bus(timetable_list):
-    now = datetime.datetime.now()
-    time_remaining_str = "오늘 운행 종료"
-    next_bus_time = None
+    """
+    - timetable_list: ["06:40", "06:50", ...] (strings)
+    - returns: (display_str, next_time_str, current_time_str)
+    - Uses Asia/Seoul timezone; if no more buses today, computes minutes until tomorrow's first bus.
+    """
+    from zoneinfo import ZoneInfo  # Python 3.9+
+    KST = ZoneInfo("Asia/Seoul")
 
-    for time_str in timetable_list:
+    # now in KST
+    now = datetime.datetime.now(tz=KST)
+    # normalize and filter valid times, keep duplicates and original strings
+    parsed_entries = []
+    for t in timetable_list:
         try:
-            clean_time_str = time_str.split('역')[0].strip()
-            hour, minute = map(int, clean_time_str.split(':'))
-            bus_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if bus_time > now:
-                minutes_remaining = int((bus_time - now).total_seconds() / 60)
-                time_remaining_str = f"다음 버스까지 약 {minutes_remaining}분 남음 ({time_str} 출발)"
-                next_bus_time = time_str
-                break
+            clean = str(t).split('역')[0].strip()
+            h, m = map(int, clean.split(':'))
+            dt = datetime.datetime(year=now.year, month=now.month, day=now.day,
+                                   hour=h, minute=m, second=0, tzinfo=KST)
+            parsed_entries.append((dt, clean))
         except Exception:
+            # skip bad formats silently
             continue
-    return time_remaining_str, next_bus_time, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
+
+    # sort by datetime (preserves duplicates)
+    parsed_entries.sort(key=lambda x: x[0])
+
+    # find next today
+    for dt, orig_str in parsed_entries:
+        if dt > now:
+            mins = int((dt - now).total_seconds() // 60)
+            display = f"다음 버스까지 약 {mins}분 남음 ({orig_str} 출발)"
+            return display, orig_str, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
+
+    # if no future today -> consider tomorrow's first bus (if exists)
+    if parsed_entries:
+        first_dt_today, first_str = parsed_entries[0]
+        # make it tomorrow
+        tomorrow_dt = first_dt_today + datetime.timedelta(days=1)
+        mins = int((tomorrow_dt - now).total_seconds() // 60)
+        display = f"오늘 운행 종료 — 내일 첫차 {first_str}까지 약 {mins}분 남음"
+        return display, first_str, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
+
+    # fallback: no valid times
+    return "등록된 시간표가 없습니다.", None, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
 
 # --- 3. 계층적 라우트 ---
 
