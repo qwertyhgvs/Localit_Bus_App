@@ -96,6 +96,8 @@ def normalize_loaded_data(data):
 
 # normalize DATA immediately after loading
 DATA = normalize_loaded_data(DATA)
+print("DEBUG: region_data keys:", list(DATA.get("region_data", {}).keys()))
+
 
 # 템플릿 전역 변수로 DATA 주입 (menu_select.html 등에서 DATA.route_name 사용 가능)
 @app.context_processor
