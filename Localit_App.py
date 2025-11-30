@@ -1,7 +1,8 @@
 from pathlib import Path
 import json
 import datetime
-from flask import Flask, render_template, jsonify, abort
+from flask import Flask, render_template, jsonify, abort, url_for
+from jinja2 import TemplateNotFound
 
 APP_PORT = 5000
 JSON_FILENAME = "timetable.json"
@@ -31,6 +32,13 @@ except Exception as e:
 
 # --- 데이터 정규화 ---
 def normalize_loaded_data(data):
+    """
+    - 지원하는 구조:
+      1) 기존: {"region_data": {...}}
+      2) stations 기반: {"stations": {...}}
+      3) tourism 필드가 있으면 그대로 둠
+    결과는 data['region_data'] 가 항상 존재하도록 보장
+    """
     if not isinstance(data, dict):
         return {"region_data": {}}
 
@@ -77,14 +85,19 @@ def normalize_loaded_data(data):
 
 DATA = normalize_loaded_data(DATA)
 print("DEBUG: region_data keys:", list(DATA.get("region_data", {}).keys()))
+# also print tourism keys if present
+if "tourism" in DATA:
+    try:
+        print("DEBUG: tourism keys:", list(DATA.get("tourism", {}).keys()))
+    except Exception:
+        pass
 
 # 템플릿 전역 변수로 DATA 주입
 @app.context_processor
 def inject_data():
     return dict(DATA=DATA)
 
-# --- 2. 시간 계산 헬퍼 함수 ---
-# replace your existing calculate_next_bus(...) with this improved version
+# --- 2. 시간 계산 헬퍼 함수 (KST-aware) ---
 def calculate_next_bus(timetable_list):
     """
     - timetable_list: ["06:40", "06:50", ...] (strings)
@@ -96,7 +109,6 @@ def calculate_next_bus(timetable_list):
 
     # now in KST
     now = datetime.datetime.now(tz=KST)
-    # normalize and filter valid times, keep duplicates and original strings
     parsed_entries = []
     for t in timetable_list:
         try:
@@ -106,60 +118,104 @@ def calculate_next_bus(timetable_list):
                                    hour=h, minute=m, second=0, tzinfo=KST)
             parsed_entries.append((dt, clean))
         except Exception:
-            # skip bad formats silently
             continue
 
-    # sort by datetime (preserves duplicates)
     parsed_entries.sort(key=lambda x: x[0])
 
-    # find next today
     for dt, orig_str in parsed_entries:
         if dt > now:
             mins = int((dt - now).total_seconds() // 60)
             display = f"다음 버스까지 약 {mins}분 남음 ({orig_str} 출발)"
             return display, orig_str, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
 
-    # if no future today -> consider tomorrow's first bus (if exists)
     if parsed_entries:
         first_dt_today, first_str = parsed_entries[0]
-        # make it tomorrow
         tomorrow_dt = first_dt_today + datetime.timedelta(days=1)
         mins = int((tomorrow_dt - now).total_seconds() // 60)
         display = f"오늘 운행 종료 — 내일 첫차 {first_str}까지 약 {mins}분 남음"
         return display, first_str, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
 
-    # fallback: no valid times
     return "등록된 시간표가 없습니다.", None, now.strftime("%Y년 %m월 %d일 %H시 %M분 %S초")
 
-# --- 3. 계층적 라우트 ---
+# --- debug route to inspect loaded DATA quickly ---
+@app.route("/_debug")
+def debug_info():
+    regions = list(DATA.get("region_data", {}).keys())
+    sample = None
+    if regions:
+        r = regions[0]
+        sample = {
+            "region": r,
+            "stations_count": len(DATA["region_data"].get(r, {})),
+            "stations_sample": list(DATA["region_data"].get(r, {}).keys())[:10]
+        }
+    return jsonify({
+        "route_name": DATA.get("route_name"),
+        "regions": regions,
+        "tourism_keys": list(DATA.get("tourism", {}).keys()) if DATA.get("tourism") else [],
+        "sample_region": sample
+    })
 
-# 3-1. 읍/면 선택
+# ---------- UI: mode selection ----------
 @app.route("/")
-def select_region():
-    regions = sorted(list(DATA.get("region_data", {}).keys()))
-    return render_template("menu_select.html",
-                           title="1단계: 읍/면 선택",
-                           menu_title="탑승할 읍/면을 선택하세요.",
-                           items=regions,
-                           next_route="select_station")
+def index_choice():
+    # index_choice.html (you already have or will create) renders two big buttons linking to regions_with_mode
+    return render_template("index_choice.html")
 
-# 3-2. 정류장 선택
-@app.route("/station_select/<region_name>")
-def select_station(region_name):
-    region_data = DATA.get("region_data", {}).get(region_name)
-    if not region_data:
+# ---------- regions with mode ----------
+@app.route("/regions/<mode>")
+def regions_with_mode(mode):
+    if mode not in ("transport", "tourism"):
         abort(404)
-    stations = sorted(list(region_data.keys()))
+    if mode == "transport":
+        items = sorted(list(DATA.get("region_data", {}).keys()))
+    else:  # tourism
+        items = sorted(list(DATA.get("tourism", {}).keys())) if DATA.get("tourism") else []
     return render_template("menu_select.html",
-                           title=f"2단계: {region_name} 정류장 선택",
-                           menu_title=f"'{region_name}' 내 정류장을 선택하세요.",
-                           items=stations,
-                           parent_region=region_name,
-                           next_route="select_route")
+                           title="1단계: 선택",
+                           menu_title=("탑승할 읍/면을 선택하세요." if mode == "transport" else "관광 카테고리를 선택하세요."),
+                           items=items,
+                           next_route="select_station_with_mode",
+                           mode=mode)
 
-# 3-3. 노선 선택
-@app.route("/route_select/<region_name>/<station_name>")
-def select_route(region_name, station_name):
+# ---------- station / category listing ----------
+@app.route("/station_select/<mode>/<region_name>")
+def select_station_with_mode(mode, region_name):
+    if mode not in ("transport", "tourism"):
+        abort(404)
+    if mode == "transport":
+        region_data = DATA.get("region_data", {}).get(region_name)
+        if not region_data:
+            abort(404)
+        items = sorted(list(region_data.keys()))
+        return render_template("menu_select.html",
+                               title=f"2단계: {region_name} 정류장 선택",
+                               menu_title=f"'{region_name}' 내 정류장을 선택하세요.",
+                               items=items,
+                               parent_region=region_name,
+                               next_route="select_route_with_mode",
+                               mode=mode)
+    else:
+        # tourism: region_name is actually a tourism category (e.g., "서천 9경")
+        category = region_name
+        cat_obj = DATA.get("tourism", {}).get(category)
+        if not cat_obj:
+            abort(404)
+        items = sorted(list(cat_obj.keys()))
+        # use parent_region so template will show breadcrumb and generate url to next_route
+        return render_template("menu_select.html",
+                               title=f"2단계: {category} 목록",
+                               menu_title=f"'{category}'에서 항목을 선택하세요.",
+                               items=items,
+                               parent_region=category,
+                               next_route="tourism_detail",
+                               mode=mode)
+
+# ---------- route selection (transport only) ----------
+@app.route("/route_select/<mode>/<region_name>/<station_name>")
+def select_route_with_mode(mode, region_name, station_name):
+    if mode != "transport":
+        abort(404)
     region_data = DATA.get("region_data", {}).get(region_name)
     if not region_data or station_name not in region_data:
         abort(404)
@@ -172,18 +228,20 @@ def select_route(region_name, station_name):
                            items=routes,
                            parent_region=region_name,
                            parent_station=station_name,
-                           next_route="show_timetable")
+                           next_route="show_timetable_with_mode",
+                           mode=mode)
 
-# 3-4. 시간표 표시
-@app.route("/timetable/<region_name>/<station_name>/<route_name>")
-def show_timetable(region_name, station_name, route_name):
+# ---------- timetable display (transport) ----------
+@app.route("/timetable/<mode>/<region_name>/<station_name>/<route_name>")
+def show_timetable_with_mode(mode, region_name, station_name, route_name):
+    if mode != "transport":
+        abort(404)
     region_data = DATA.get("region_data", {}).get(region_name)
     if not region_data or station_name not in region_data:
         abort(404)
 
     station_data = region_data[station_name]
     route_obj = station_data.get("노선", {}).get(route_name)
-
     if not route_obj:
         abort(404)
 
@@ -201,7 +259,7 @@ def show_timetable(region_name, station_name, route_name):
 
     gps_info = station_data.get("gps_info", [])
     time_remaining_str, next_bus_time, current_time_str = calculate_next_bus(timetable_list)
-    
+
     return render_template("timetable_view.html",
                            title=f"{station_name} ({route_name}) 시간표",
                            current_time=current_time_str,
@@ -210,7 +268,36 @@ def show_timetable(region_name, station_name, route_name):
                            departure_station=station_name,
                            next_bus_time=next_bus_time,
                            timetable=timetable_list,
-                           gps_info=gps_info)
+                           gps_info=gps_info,
+                           mode=mode)
+
+# ---------- tourism detail (category -> place) ----------
+# Template name: tourism_view.html (if exists); otherwise fallback to JSON response
+@app.route("/tourism/<mode>/<region_name>/<station_name>")
+def tourism_detail(mode, region_name, station_name):
+    if mode != "tourism":
+        abort(404)
+    category = region_name
+    place = station_name
+    cat_obj = DATA.get("tourism", {}).get(category)
+    if not cat_obj or place not in cat_obj:
+        abort(404)
+    place_info = cat_obj[place]
+
+    # try rendering template if present, otherwise return JSON
+    try:
+        return render_template("tourism_view.html",
+                               title=f"{place} — {category}",
+                               category=category,
+                               place=place,
+                               info=place_info,
+                               mode=mode)
+    except TemplateNotFound:
+        return jsonify({
+            "category": category,
+            "place": place,
+            "info": place_info
+        })
 
 # --- 4. 앱 실행 ---
 if __name__ == "__main__":

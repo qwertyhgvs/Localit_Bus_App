@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ place }} — {{ category }}</title>
+
+  <!-- Leaflet 지도 -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body{font-family:"Noto Sans KR", sans-serif; padding:18px; background:#f9fbff; color:#222}
+    .top{display:flex; align-items:center; justify-content:space-between; gap:12px}
+    h1{margin:0; font-size:1.3rem}
+    .meta{color:#666; font-size:0.95rem}
+    .card{background:#fff; padding:14px; border-radius:10px; box-shadow:0 8px 20px rgba(20,30,60,0.06); margin-top:12px; max-width:900px}
+    #map{height:320px; border-radius:8px; margin-top:10px}
+    .desc{margin-top:10px; line-height:1.6}
+    .back{display:inline-block;margin-top:12px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid #eee;text-decoration:none;color:#333}
+    .badge{display:inline-block;padding:6px 8px;border-radius:6px;background:#eef4ff;color:#0a66c2;font-weight:600;margin-left:8px;font-size:0.85rem}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h1>{{ place }}</h1>
+      <div class="meta">{{ category }} · {{ mode|capitalize }}</div>
+    </div>
+    <div class="meta">앱: {{ DATA.route_name }}</div>
+  </div>
+
+  <div class="card">
+    {% if info.description %}
+      <div class="desc">{{ info.description }}</div>
+    {% endif %}
+
+    {% if info.best_time %}
+      <div style="margin-top:10px;"><strong>추천 시기:</strong> {{ info.best_time }}</div>
+    {% endif %}
+    {% if info.month %}
+      <div style="margin-top:6px;"><strong>개최 시기:</strong> {{ info.month }}</div>
+    {% endif %}
+    {% if info.location %}
+      <div style="margin-top:6px;"><strong>장소:</strong> {{ info.location }}</div>
+    {% endif %}
+
+    {% if info.gps %}
+      <div id="map"></div>
+      <script>
+        var lat = {{ info.gps[0] }};
+        var lng = {{ info.gps[1] }};
+        var map = L.map('map').setView([lat, lng], 14);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
+        L.marker([lat, lng]).addTo(map).bindPopup("{{ place }}").openPopup();
+      </script>
+    {% endif %}
+
+    <a class="back" href="{{ url_for('station_select_with_mode', mode='tourism', region_name=category) }}">⬅ 목록으로 돌아가기</a>
+    <a class="back" style="margin-left:8px" href="{{ url_for('regions_with_mode', mode='tourism') }}">🏠 관광 카테고리</a>
+  </div>
+</body>
+</html>

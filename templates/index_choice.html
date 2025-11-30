@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Localit — 선택</title>
+  <style>
+    body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR"; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; background:#f7fbff}
+    .card{background:#fff;padding:28px;border-radius:12px;box-shadow:0 10px 30px rgba(15,30,60,0.06); text-align:center; width:340px;}
+    h1{margin:0 0 8px;font-size:1.3rem}
+    p{color:#666;margin:0 0 18px}
+    .btn{display:block;padding:10px 14px;margin:10px 0;border-radius:8px;text-decoration:none;color:#fff;font-weight:600}
+    .btn.transport{background:#0a66c2}
+    .btn.tourism{background:#16a34a}
+    .small{font-size:0.9rem;color:#777;margin-top:12px}
+    footer{position:fixed;left:12px;bottom:12px;font-size:0.85rem;color:#999}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Localit</h1>
+    <p>원하시는 서비스를 선택하세요.</p>
+
+    <a class="btn transport" href="{{ url_for('regions_with_mode', mode='transport') }}">🚍 교통 (버스 / 시간표)</a>
+    <a class="btn tourism" href="{{ url_for('regions_with_mode', mode='tourism') }}">🗺️ 관광 (서천 9경 · 축제)</a>
+
+    <div class="small">※ 각 단계에서 검색으로 항목을 빠르게 찾을 수 있습니다.</div>
+  </div>
+
+  <footer>Localit — 로컬 교통 & 관광 안내</footer>
+</body>
+</html>
