@@ -1,0 +1,101 @@
+<!-- templates/menu_select.html -->
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>{{ title or "메뉴 선택" }}</title>
+  <style>
+    :root { --bg:#fbfbfd; --card:#ffffff; --muted:#666; --accent:#0a66c2; }
+    body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR"; margin:0; padding:18px; background:var(--bg);}
+    .wrap{max-width:980px; margin:0 auto;}
+    header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+    h1{font-size:1.2rem; margin:0;}
+    p.lead{margin:6px 0 0; color:var(--muted);}
+    .card{background:var(--card); border-radius:10px; padding:12px; box-shadow:0 6px 18px rgba(20,20,30,0.04);}
+    .controls{display:flex; gap:8px; align-items:center; margin-bottom:10px;}
+    input[type="search"]{flex:1; padding:8px 10px; border-radius:8px; border:1px solid #e1e1e8;}
+    .list{margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px;}
+    .item{padding:10px 12px; border-radius:8px; background:#f7f9fc; cursor:pointer; text-decoration:none; color:#111; display:block; border:1px solid transparent;}
+    .item:hover{background:#eef6ff; border-color:#d7eafc;}
+    .breadcrumb{font-size:0.9rem; color:var(--muted); margin-bottom:8px;}
+    .back{display:inline-block; margin-top:10px; padding:8px 12px; background:#fff; border:1px solid #eee; border-radius:8px; text-decoration:none; color:#333;}
+    .sub{font-size:0.88rem; color:var(--muted); margin-top:6px;}
+    .empty{color:#999; padding:18px; text-align:center;}
+    @media (max-width:560px){ .list{grid-template-columns:1fr;} header{flex-direction:column; align-items:flex-start; gap:8px;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>{{ title }}</h1>
+        <p class="lead">{{ menu_title }}</p>
+      </div>
+      <div class="sub">앱: {{ (DATA.route_name if DATA is defined else "") or "" }}</div>
+    </header>
+
+    <div class="card">
+      <div class="controls">
+        <input id="q" type="search" placeholder="검색 (정확한 이름 일부만 입력해도 됩니다)" />
+        <a id="home" class="back" href="{{ url_for('select_region') }}">처음으로</a>
+      </div>
+
+      <div class="breadcrumb">
+        {% if parent_region is defined %}
+          선택: {{ parent_region }}
+          {% if parent_station is defined %} › {{ parent_station }}{% endif %}
+        {% else %}
+          (아직 선택되지 않음)
+        {% endif %}
+      </div>
+
+      {% if items %}
+        <div id="list" class="list">
+          {# items는 문자열 목록 (정렬은 백엔드에서 처리했으니 여기서는 그대로 반복) #}
+          {% for item in items %}
+            {% if parent_region is defined and parent_station is defined %}
+              {# 현재 페이지: 노선 선택 -> 다음은 show_timetable (need route_name) #}
+              <a class="item" href="{{ url_for(next_route, region_name=parent_region, station_name=parent_station, route_name=item) }}">{{ item }}</a>
+            {% elif parent_region is defined %}
+              {# 현재 페이지: 정류장 선택 -> 다음은 select_route (need station_name) #}
+              <a class="item" href="{{ url_for(next_route, region_name=parent_region, station_name=item) }}">{{ item }}</a>
+            {% else %}
+              {# 현재 페이지: 읍/면 선택 -> 다음은 select_station (need region_name) #}
+              <a class="item" href="{{ url_for(next_route, region_name=item) }}">{{ item }}</a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">표시할 항목이 없습니다.</div>
+      {% endif %}
+
+      <div style="margin-top:12px;">
+        <small class="sub">※ 빠른 팁: 목록에서 이름 일부를 검색하면 결과가 필터링됩니다.</small>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 클라이언트 사이드 필터 (간단하고 빠름)
+    const input = document.getElementById('q');
+    const list = document.getElementById('list');
+    if (input && list) {
+      input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        const nodes = Array.from(list.children);
+        if (!q) {
+          nodes.forEach(n => n.style.display = '');
+          return;
+        }
+        nodes.forEach(n => {
+          const text = (n.textContent||'').toLowerCase();
+          n.style.display = text.includes(q) ? '' : 'none';
+        });
+      });
+    }
+
+    // 모바일에서 '처음으로' 링크 대신 현재 위치로 돌아가게 할 수도 있음(선택).
+  </script>
+</body>
+</html>

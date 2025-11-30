@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ departure_station }} — {{ route_name }} 시간표</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body {
+      font-family: "Noto Sans KR", sans-serif;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .header-title {
+      font-size: 1.4rem;
+      font-weight: 600;
+    }
+    .sub-info {
+      color: #555;
+      font-size: 0.9rem;
+      margin-bottom: 14px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 20px;
+    }
+    td, th {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+    }
+    #map {
+      height: 350px;
+      max-width: 800px;
+      margin-top: 14px;
+    }
+    a.back {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 8px 14px;
+      background:#eee;
+      border-radius: 6px;
+      text-decoration: none;
+      color:#333;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-title">
+    {{ departure_station }} → {{ route_name }} 시간표
+  </div>
+
+  <div class="sub-info">
+    현재 시각: {{ current_time }}<br>
+    {{ time_remaining }}
+  </div>
+
+  <h3>전체 시간표</h3>
+
+  {% if timetable %}
+    <table>
+      <thead>
+        <tr><th>#</th><th>출발 시간</th></tr>
+      </thead>
+      <tbody>
+        {% for t in timetable %}
+          <tr><td>{{ loop.index }}</td><td>{{ t }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>등록된 시간표가 없습니다.</p>
+  {% endif %}
+
+  <h3>정류장 위치</h3>
+
+  <div id="map"></div>
+  <script>
+    var gps = {{ gps_info | tojson }};
+
+    var lat = gps[0];
+    var lng = gps[1];
+
+    var map = L.map("map").setView([lat, lng], 15);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    L.marker([lat, lng])
+      .addTo(map)
+      .bindPopup("{{ departure_station }}")
+      .openPopup();
+  </script>
+
+  <a class="back" href="/">⬅ 처음으로 돌아가기</a>
+
+</body>
+</html>
