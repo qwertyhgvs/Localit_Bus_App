@@ -30,6 +30,78 @@ except Exception as e:
     # 데이터 로드 실패 시 앱의 최소 기능 보장
     DATA = {"region_data": {}, "route_name": "데이터 로드 오류"}
 
+# --- 데이터 정규화: 다양한 JSON 스키마를 하나로 맞춤 ---
+def normalize_loaded_data(data):
+    """
+    목적: 여러 JSON 스키마를 지원하기 위해 정규화
+    - 기존: {"region_data": { ... }}
+    - stations 기반: {"stations": { stationName: { "region": "...", "gps": [...], "routes": {...} } } }
+    결과: data['region_data'] 가 항상 존재하도록 보장
+    """
+    if not isinstance(data, dict):
+        return {"region_data": {}}
+
+    # 이미 region_data가 있으면 그대로 둠
+    if "region_data" in data and isinstance(data["region_data"], dict):
+        return data
+
+    # 'stations' 형태일 경우 변환
+    stations = data.get("stations")
+    if stations and isinstance(stations, dict):
+        region_map = {}
+        for station_name, station_obj in stations.items():
+            # station_obj 예상: {"region": "서천읍", "gps": [...], "routes": {...}}
+            region = station_obj.get("region", "기타")
+            gps = station_obj.get("gps") or station_obj.get("gps_info") or station_obj.get("gpsinfo") or []
+            station_entry = {
+                "gps_info": gps if isinstance(gps, list) else [],
+                "노선": {}
+            }
+            routes = station_obj.get("routes") or {}
+            # routes may be {rname: {"destinations": {...}}} or {rname: [times]}
+            for rname, robj in routes.items():
+                if isinstance(robj, dict):
+                    # robj could have "destinations" or be directly mapping destination->list
+                    if "destinations" in robj and isinstance(robj["destinations"], dict):
+                        # destinations is dict: destinationName -> [times]
+                        station_entry["노선"][rname] = robj["destinations"]
+                    else:
+                        # try to interpret robj as mapping destination->list
+                        # if values are lists, accept; else if robj itself is list-like, wrap
+                        is_direct_map = all(isinstance(v, list) for v in robj.values()) if robj else False
+                        if is_direct_map:
+                            station_entry["노선"][rname] = robj
+                        else:
+                            # fallback: treat robj as single destination under route name if it contains a list
+                            # e.g., {"destinations": [..]} or other
+                            dests = robj.get("destinations")
+                            if isinstance(dests, list):
+                                station_entry["노선"][rname] = { rname: dests }
+                            else:
+                                station_entry["노선"][rname] = {}
+                elif isinstance(robj, list):
+                    # route directly maps to list of times -> treat as route-> same-name destination
+                    station_entry["노선"][rname] = { rname: robj }
+                else:
+                    station_entry["노선"][rname] = {}
+
+            region_map.setdefault(region, {})[station_name] = station_entry
+
+        data["region_data"] = region_map
+        return data
+
+    # fallback: ensure region_data exists even if empty
+    data.setdefault("region_data", {})
+    return data
+
+# normalize DATA immediately after loading
+DATA = normalize_loaded_data(DATA)
+
+# 템플릿 전역 변수로 DATA 주입 (menu_select.html 등에서 DATA.route_name 사용 가능)
+@app.context_processor
+def inject_data():
+    return dict(DATA=DATA)
+
 # --- 2. 시간 계산 헬퍼 함수 (로직 분리) ---
 def calculate_next_bus(timetable_list):
     """주어진 시간표 리스트에서 다음 버스 시간과 남은 시간을 계산합니다."""
